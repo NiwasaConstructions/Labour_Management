@@ -10,7 +10,11 @@
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
-        .nav-item.active { background-color: #0f766e; color: white; } /* Teal theme */
+        .nav-item.active { background-color: #0f766e; color: white; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
 </head>
 <body class="h-screen overflow-hidden bg-gray-100 flex items-center justify-center">
@@ -41,6 +45,7 @@
                     Sign In
                 </button>
             </form>
+            <p id="loginError" class="text-red-500 text-sm text-center mt-4 hidden"></p>
         </div>
     </div>
 
@@ -58,7 +63,6 @@
                     <i class="fas fa-list w-6 text-center"></i> <span class="ml-2">View Reports</span>
                 </button>
                 
-                <!-- Admin Only Menu Item -->
                 <div id="adminMenu" class="hidden">
                     <div class="pt-4 pb-2">
                         <p class="text-xs font-semibold text-teal-500 uppercase tracking-wider ml-3">Admin Panel</p>
@@ -85,71 +89,75 @@
 
             <div class="p-6 flex-1">
                 
-                <!-- 1. View Logs Tab (Everyone) -->
+                <!-- 1. View Logs Tab -->
                 <div id="logs" class="tab-content active">
                     <div class="flex justify-between items-center mb-6">
                         <h3 class="text-lg font-bold text-gray-700">Daily Site Efficiency Logs</h3>
                         <select id="filterSite" onchange="renderLogs()" class="p-2 border rounded-lg focus:ring-2 focus:ring-teal-500">
                             <option value="ALL">All Sites</option>
-                            <!-- Sites loaded via JS -->
                         </select>
                     </div>
-                    <!-- Cards Grid -->
                     <div id="logsContainer" class="grid grid-cols-1 xl:grid-cols-2 gap-6">
                         <!-- Logs injected by JS -->
                     </div>
                 </div>
 
-                <!-- 2. Data Entry Tab (Admin Only) -->
+                <!-- 2. Data Entry Tab (Admin Only - Updated for Time Blocks) -->
                 <div id="addData" class="tab-content hidden">
-                    <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-100 max-w-4xl mx-auto">
-                        <h3 class="text-lg font-bold mb-4 border-b pb-2 text-gray-700"><i class="fas fa-clipboard-check text-teal-600 mr-2"></i>New Labor Record</h3>
+                    <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-100 max-w-5xl mx-auto">
+                        <h3 class="text-lg font-bold mb-4 border-b pb-2 text-gray-700"><i class="fas fa-clipboard-check text-teal-600 mr-2"></i>CCTV Labor Log Entry</h3>
                         <form id="laborForm" class="space-y-6">
                             
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700">Site</label>
-                                    <input type="text" id="recordSite" required class="mt-1 w-full p-2 border rounded-lg" placeholder="e.g. Kottawa Site">
+                                    <input type="text" id="recordSite" required class="mt-1 w-full p-2 border rounded-lg focus:ring-2 focus:ring-teal-500" placeholder="e.g. Kottawa Site">
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700">Date</label>
-                                    <input type="date" id="recordDate" required class="mt-1 w-full p-2 border rounded-lg">
+                                    <input type="date" id="recordDate" required class="mt-1 w-full p-2 border rounded-lg focus:ring-2 focus:ring-teal-500">
                                 </div>
                             </div>
 
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700">Skilled Labor Count (බාස්ලා)</label>
-                                    <input type="number" id="skilledCount" required class="mt-1 w-full p-2 border rounded-lg" min="0" value="0">
+                                    <label class="block text-sm font-medium text-gray-700">Total Skilled Labor (බාස්ලා ගාන)</label>
+                                    <input type="number" id="skilledCount" required class="mt-1 w-full p-2 border rounded-lg focus:ring-2 focus:ring-teal-500" min="0" value="0">
                                 </div>
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700">Unskilled Labor Count (අත්වැඩ)</label>
-                                    <input type="number" id="unskilledCount" required class="mt-1 w-full p-2 border rounded-lg" min="0" value="0">
+                                    <label class="block text-sm font-medium text-gray-700">Total Unskilled Labor (අත්වැඩ ගාන)</label>
+                                    <input type="number" id="unskilledCount" required class="mt-1 w-full p-2 border rounded-lg focus:ring-2 focus:ring-teal-500" min="0" value="0">
                                 </div>
                             </div>
 
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700">Actual Work (Hours)</label>
-                                    <input type="number" id="workHours" required class="mt-1 w-full p-2 border rounded-lg" min="0" step="0.5" placeholder="e.g. 6.5">
+                            <!-- DYNAMIC TIME BLOCKS SECTION -->
+                            <div>
+                                <div class="flex justify-between items-center mb-2 border-b pb-2">
+                                    <h4 class="font-bold text-gray-700"><i class="fas fa-clock text-teal-500 mr-1"></i> Time Activity Blocks</h4>
+                                    <button type="button" onclick="addTimeBlock()" class="bg-teal-100 hover:bg-teal-200 text-teal-800 text-xs font-bold py-1 px-3 rounded">
+                                        + Add Time Block
+                                    </button>
                                 </div>
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700">Breaks Taken (Hours)</label>
-                                    <input type="number" id="breakHours" required class="mt-1 w-full p-2 border rounded-lg" min="0" step="0.5" placeholder="e.g. 1.5">
+                                
+                                <div id="timeBlocksContainer" class="space-y-3">
+                                    <!-- Rows will be added here by JS -->
                                 </div>
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700">Overtime (OT Hours)</label>
-                                    <input type="number" id="otHours" class="mt-1 w-full p-2 border rounded-lg" min="0" step="0.5" value="0">
-                                </div>
+                            </div>
+
+                            <!-- AUTO CALCULATED SUMMARY -->
+                            <div class="bg-teal-50 p-4 rounded-lg border border-teal-200 flex justify-around text-center">
+                                <div><p class="text-xs text-gray-500 uppercase font-bold">Total Work</p><p class="text-lg font-black text-teal-700" id="lblTotalWork">0h</p></div>
+                                <div><p class="text-xs text-gray-500 uppercase font-bold">Total Break</p><p class="text-lg font-black text-orange-600" id="lblTotalBreak">0h</p></div>
+                                <div><p class="text-xs text-gray-500 uppercase font-bold">Total OT</p><p class="text-lg font-black text-purple-600" id="lblTotalOT">0h</p></div>
                             </div>
 
                             <div>
-                                <label class="block text-sm font-medium text-gray-700">CCTV Admin Note / Weather</label>
-                                <textarea id="adminNote" rows="2" class="mt-1 w-full p-2 border rounded-lg" placeholder="Any special observations..."></textarea>
+                                <label class="block text-sm font-medium text-gray-700">General Admin Note / Weather</label>
+                                <textarea id="adminNote" rows="2" class="mt-1 w-full p-2 border rounded-lg focus:ring-2 focus:ring-teal-500" placeholder="Any special observations for the day..."></textarea>
                             </div>
 
                             <button type="submit" id="saveRecordBtn" class="w-full bg-teal-600 text-white font-bold py-3 rounded-lg hover:bg-teal-700 transition">
-                                Save Record
+                                Save Full Day Record
                             </button>
                         </form>
                     </div>
@@ -159,18 +167,72 @@
         </main>
     </div>
 
-    <!-- ADD NOTE MODAL (For Viewers & Admin) -->
-    <div id="noteModal" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden flex items-center justify-center z-50">
-        <div class="bg-white rounded-xl shadow-2xl w-[400px] max-w-full m-4 overflow-hidden">
-            <div class="bg-gray-800 p-4 text-white flex justify-between items-center">
-                <h3 class="font-bold text-lg"><i class="fas fa-comment-dots mr-2"></i>Add Site Note</h3>
-                <button onclick="closeNoteModal()" class="text-gray-300 hover:text-white"><i class="fas fa-times text-xl"></i></button>
+    <!-- FULL DETAILS MODAL -->
+    <div id="detailsModal" class="fixed inset-0 bg-gray-900 bg-opacity-60 hidden flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-full">
+            <div class="bg-teal-700 p-4 text-white flex justify-between items-center shrink-0">
+                <h3 class="font-bold text-lg" id="modalSiteTitle"><i class="fas fa-clipboard-list mr-2"></i>Daily Report Details</h3>
+                <button onclick="closeDetailsModal()" class="text-teal-200 hover:text-white"><i class="fas fa-times text-xl"></i></button>
             </div>
-            <div class="p-6">
-                <textarea id="viewerNoteText" rows="3" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-teal-500" placeholder="Type your comment/reason here..."></textarea>
-                <button onclick="submitViewerNote()" class="mt-4 w-full bg-teal-600 text-white font-bold py-2.5 rounded-lg hover:bg-teal-700 transition">
-                    Post Note
-                </button>
+            
+            <div class="p-6 overflow-y-auto flex-1">
+                <!-- Summary Header -->
+                <div class="flex justify-between items-center mb-6 bg-gray-50 p-4 rounded-lg border">
+                    <div class="text-center">
+                        <p class="text-xs text-gray-500 uppercase">Work</p>
+                        <p class="text-xl font-bold text-teal-600" id="modalWork">0h</p>
+                    </div>
+                    <div class="text-center">
+                        <p class="text-xs text-gray-500 uppercase">Break</p>
+                        <p class="text-xl font-bold text-orange-500" id="modalBreak">0h</p>
+                    </div>
+                    <div class="text-center">
+                        <p class="text-xs text-gray-500 uppercase">OT</p>
+                        <p class="text-xl font-bold text-purple-600" id="modalOT">0h</p>
+                    </div>
+                    <div class="text-center border-l pl-4">
+                        <p class="text-xs text-gray-500 uppercase">Efficiency</p>
+                        <p class="text-2xl font-black text-gray-800" id="modalEff">0%</p>
+                    </div>
+                </div>
+
+                <!-- Timeline Table -->
+                <h4 class="font-bold text-gray-700 mb-2 border-b pb-1">CCTV Time Timeline</h4>
+                <div class="overflow-x-auto mb-6">
+                    <table class="w-full text-left text-sm border-collapse">
+                        <thead>
+                            <tr class="bg-gray-100 text-gray-600 border-y">
+                                <th class="p-2">Time Period</th>
+                                <th class="p-2">Duration</th>
+                                <th class="p-2">Activity</th>
+                                <th class="p-2 text-center">Workers Count</th>
+                            </tr>
+                        </thead>
+                        <tbody id="modalTimelineBody" class="divide-y divide-gray-200">
+                            <!-- Injected by JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Admin Note -->
+                <div id="modalAdminNoteDiv" class="mb-6 hidden">
+                    <h4 class="font-bold text-gray-700 mb-1 border-b pb-1">Admin Note</h4>
+                    <p class="text-sm text-gray-600 bg-blue-50 p-3 rounded" id="modalAdminNote"></p>
+                </div>
+
+                <!-- Viewer Comments Section -->
+                <h4 class="font-bold text-gray-700 mb-2 border-b pb-1">Comments & Reasons</h4>
+                <div id="modalCommentsContainer" class="space-y-2 mb-4 text-sm">
+                    <!-- Comments injected here -->
+                </div>
+
+                <!-- Add Comment Box -->
+                <div class="mt-4 bg-gray-50 p-3 rounded-lg border">
+                    <textarea id="viewerNoteText" rows="2" class="w-full p-2 border rounded focus:ring-2 focus:ring-teal-500 text-sm" placeholder="Type your comment/reason here..."></textarea>
+                    <button onclick="submitViewerNote()" class="mt-2 bg-teal-600 text-white font-bold py-1.5 px-4 rounded text-sm hover:bg-teal-700 transition">
+                        Post Comment
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -187,7 +249,7 @@
             document.getElementById('page-title').innerText = tabId === 'logs' ? 'Labor Reports & Efficiency' : 'CCTV Data Entry';
         }
         
-        function closeNoteModal() { document.getElementById('noteModal').classList.add('hidden'); }
+        function closeDetailsModal() { document.getElementById('detailsModal').classList.add('hidden'); }
         document.getElementById('recordDate').valueAsDate = new Date();
     </script>
 </body>
