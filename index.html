@@ -93,7 +93,7 @@
                 <div id="logs" class="tab-content active">
                     <div class="flex justify-between items-center mb-6">
                         <h3 class="text-lg font-bold text-gray-700">Daily Site Efficiency Logs</h3>
-                        <select id="filterSite" onchange="renderLogs()" class="p-2 border rounded-lg focus:ring-2 focus:ring-teal-500">
+                        <select id="filterSite" class="p-2 border rounded-lg focus:ring-2 focus:ring-teal-500">
                             <option value="ALL">All Sites</option>
                         </select>
                     </div>
@@ -102,7 +102,7 @@
                     </div>
                 </div>
 
-                <!-- 2. Data Entry Tab (Admin Only - Updated for Time Blocks) -->
+                <!-- 2. Data Entry Tab (Admin Only) -->
                 <div id="addData" class="tab-content hidden">
                     <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-100 max-w-5xl mx-auto">
                         <h3 class="text-lg font-bold mb-4 border-b pb-2 text-gray-700"><i class="fas fa-clipboard-check text-teal-600 mr-2"></i>CCTV Labor Log Entry</h3>
@@ -134,7 +134,8 @@
                             <div>
                                 <div class="flex justify-between items-center mb-2 border-b pb-2">
                                     <h4 class="font-bold text-gray-700"><i class="fas fa-clock text-teal-500 mr-1"></i> Time Activity Blocks</h4>
-                                    <button type="button" onclick="addTimeBlock()" class="bg-teal-100 hover:bg-teal-200 text-teal-800 text-xs font-bold py-1 px-3 rounded">
+                                    <!-- Changed this button -->
+                                    <button type="button" id="btnAddTimeBlock" class="bg-teal-100 hover:bg-teal-200 text-teal-800 text-xs font-bold py-1 px-3 rounded transition">
                                         + Add Time Block
                                     </button>
                                 </div>
