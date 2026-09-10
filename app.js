@@ -25,7 +25,6 @@ let isAdmin = false;
 onAuthStateChanged(auth, (user) => {
     if (user) {
         currentUserEmail = user.email;
-        // Added Lakmal's email as Admin
         isAdmin = (currentUserEmail === 'lakmalm@niwasa.com' || currentUserEmail === 'sulochana@niwasa.com' || currentUserEmail === 'admin@niwasa.lk');
         
         document.getElementById('login-screen').classList.add('hidden');
@@ -36,9 +35,10 @@ onAuthStateChanged(auth, (user) => {
             document.getElementById('userRoleDisplay').innerText = "ADMIN (Data Entry)";
             document.getElementById('userRoleDisplay').classList.replace('bg-teal-700', 'bg-red-600');
             document.getElementById('adminMenu').classList.remove('hidden');
-            // Ensure at least one time block exists on load
+            
+            // Add first initial time block
             if(document.getElementById('timeBlocksContainer').children.length === 0) {
-                window.addTimeBlock();
+                addTimeBlock();
             }
         } else {
             document.getElementById('userRoleDisplay').innerText = "VIEWER";
@@ -59,7 +59,6 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
         await signInWithEmailAndPassword(auth, document.getElementById('loginEmail').value, document.getElementById('loginPassword').value);
         e.target.reset();
     } catch (error) {
-        console.error("Login Error:", error);
         alert("Login Failed: Please check your Email and Password.");
     } finally { 
         btn.innerHTML = 'Sign In'; 
@@ -70,21 +69,20 @@ document.getElementById('logoutBtn').addEventListener('click', () => signOut(aut
 
 
 // ==========================================
-// DYNAMIC TIME BLOCKS LOGIC
+// DYNAMIC TIME BLOCKS LOGIC (SAFE EVENT LISTENERS)
 // ==========================================
-let blockCounter = 0;
+const timeBlocksContainer = document.getElementById('timeBlocksContainer');
 
-window.addTimeBlock = function() {
-    blockCounter++;
-    const container = document.getElementById('timeBlocksContainer');
+// Function to append a new block
+function addTimeBlock() {
     const html = `
-        <div class="flex flex-col sm:flex-row gap-2 items-center bg-white p-3 rounded border border-gray-200 shadow-sm time-block-row" id="block-${blockCounter}">
+        <div class="flex flex-col sm:flex-row gap-2 items-center bg-white p-3 rounded border border-gray-200 shadow-sm time-block-row">
             <div class="flex gap-2 w-full sm:w-auto">
-                <input type="time" class="time-start p-2 border rounded text-sm w-full" required onchange="calculateTotals()">
+                <input type="time" class="time-start p-2 border rounded text-sm w-full" required>
                 <span class="self-center text-gray-400">to</span>
-                <input type="time" class="time-end p-2 border rounded text-sm w-full" required onchange="calculateTotals()">
+                <input type="time" class="time-end p-2 border rounded text-sm w-full" required>
             </div>
-            <select class="time-type p-2 border rounded text-sm w-full sm:w-auto" required onchange="calculateTotals()">
+            <select class="time-type p-2 border rounded text-sm w-full sm:w-auto" required>
                 <option value="Work">Normal Work</option>
                 <option value="Tea Break">Tea Break</option>
                 <option value="Lunch">Lunch Break</option>
@@ -92,29 +90,40 @@ window.addTimeBlock = function() {
                 <option value="OT">Overtime (OT)</option>
             </select>
             <input type="number" class="time-workers p-2 border rounded text-sm w-full sm:w-24" placeholder="Workers" required min="1">
-            <button type="button" onclick="removeTimeBlock('block-${blockCounter}')" class="p-2 text-red-500 hover:bg-red-50 rounded">
-                <i class="fas fa-trash"></i>
+            <button type="button" class="delete-block-btn p-2 text-red-500 hover:bg-red-50 rounded">
+                <i class="fas fa-trash pointer-events-none"></i>
             </button>
         </div>
     `;
-    container.insertAdjacentHTML('beforeend', html);
-};
+    timeBlocksContainer.insertAdjacentHTML('beforeend', html);
+}
 
-window.removeTimeBlock = function(id) {
-    document.getElementById(id).remove();
-    calculateTotals();
-};
+// 1. Add Block Button Listener
+document.getElementById('btnAddTimeBlock').addEventListener('click', addTimeBlock);
+
+// 2. Delete Block Listener (Event Delegation)
+timeBlocksContainer.addEventListener('click', (e) => {
+    const deleteBtn = e.target.closest('.delete-block-btn');
+    if (deleteBtn) {
+        deleteBtn.closest('.time-block-row').remove();
+        calculateTotals(); // Recalculate after delete
+    }
+});
+
+// 3. Calculation Listeners (Fires when inputs change)
+timeBlocksContainer.addEventListener('input', calculateTotals);
+timeBlocksContainer.addEventListener('change', calculateTotals);
 
 function getHoursDiff(start, end) {
     if(!start || !end) return 0;
     const [sh, sm] = start.split(':');
     const [eh, em] = end.split(':');
     let diff = (new Date(0,0,0,eh,em) - new Date(0,0,0,sh,sm)) / 3600000;
-    if(diff < 0) diff += 24; // Handle passing midnight
+    if(diff < 0) diff += 24; 
     return diff;
 }
 
-window.calculateTotals = function() {
+function calculateTotals() {
     let tWork = 0, tBreak = 0, tOT = 0;
     const rows = document.querySelectorAll('.time-block-row');
     
@@ -122,7 +131,6 @@ window.calculateTotals = function() {
         const start = row.querySelector('.time-start').value;
         const end = row.querySelector('.time-end').value;
         const type = row.querySelector('.time-type').value;
-        
         const hours = getHoursDiff(start, end);
         
         if(type === 'Work') tWork += hours;
@@ -135,7 +143,7 @@ window.calculateTotals = function() {
     document.getElementById('lblTotalOT').innerText = tOT.toFixed(2) + 'h';
     
     return { workH: tWork, breakH: tBreak, otH: tOT };
-};
+}
 
 
 // ==========================================
@@ -151,7 +159,6 @@ document.getElementById('laborForm').addEventListener('submit', async (e) => {
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving Record...';
     btn.disabled = true;
 
-    // Collect Time Blocks Data
     let events = [];
     rows.forEach(row => {
         const start = row.querySelector('.time-start').value;
@@ -166,7 +173,7 @@ document.getElementById('laborForm').addEventListener('submit', async (e) => {
     });
 
     const totals = calculateTotals();
-    const totalTime = totals.workH + totals.breakH; // OT is usually separate efficiency, but let's base efficiency on regular work vs break
+    const totalTime = totals.workH + totals.breakH; 
     const efficiency = totalTime > 0 ? Math.round((totals.workH / totalTime) * 100) : 0;
 
     const data = {
@@ -178,7 +185,7 @@ document.getElementById('laborForm').addEventListener('submit', async (e) => {
         breakHours: parseFloat(totals.breakH.toFixed(2)),
         otHours: parseFloat(totals.otH.toFixed(2)),
         efficiency: efficiency,
-        events: events, // The detailed chronological log
+        events: events, 
         adminNote: document.getElementById('adminNote').value,
         viewerNotes: [], 
         createdAt: serverTimestamp()
@@ -189,10 +196,11 @@ document.getElementById('laborForm').addEventListener('submit', async (e) => {
         document.getElementById('laborForm').reset();
         document.getElementById('recordDate').valueAsDate = new Date();
         document.getElementById('timeBlocksContainer').innerHTML = '';
-        window.addTimeBlock(); // add one empty row back
+        addTimeBlock(); 
         calculateTotals();
         alert("Record Saved Successfully!");
-        switchTab('logs'); // Switch to view tab
+        // Switch to view tab visually
+        document.getElementById('nav-logs').click();
     } catch (error) {
         alert("Error saving record.");
         console.error(error);
@@ -223,10 +231,12 @@ onSnapshot(query(collection(db, "laborLogs"), orderBy("date", "desc")), (snapsho
     uniqueSites.forEach(site => { filterSite.innerHTML += `<option value="${site}">${site}</option>`; });
     filterSite.value = currentFilter;
 
-    window.renderLogs();
+    renderLogs();
 });
 
-window.renderLogs = function() {
+filterSite.addEventListener('change', renderLogs);
+
+function renderLogs() {
     const filter = filterSite.value;
     const container = document.getElementById('logsContainer');
     container.innerHTML = '';
@@ -244,7 +254,7 @@ window.renderLogs = function() {
         if(log.efficiency < 50) effColor = 'bg-red-500';
 
         container.innerHTML += `
-            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden cursor-pointer hover:shadow-md transition" onclick="openDetails('${log.id}')">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden cursor-pointer hover:shadow-md transition" onclick="window.openDetails('${log.id}')">
                 <div class="bg-gray-50 p-4 border-b flex justify-between items-center">
                     <div>
                         <h4 class="font-bold text-gray-800 text-lg">${log.siteName}</h4>
@@ -278,7 +288,7 @@ window.renderLogs = function() {
             </div>
         `;
     });
-};
+}
 
 
 // ==========================================
@@ -286,6 +296,7 @@ window.renderLogs = function() {
 // ==========================================
 let activeLogIdForNote = null;
 
+// Attach globally for the inline onclick in the HTML string generated above
 window.openDetails = function(logId) {
     const log = allLogs.find(l => l.id === logId);
     if(!log) return;
@@ -303,7 +314,6 @@ window.openDetails = function(logId) {
     document.getElementById('modalEff').innerText = log.efficiency + '%';
     document.getElementById('modalEff').className = `text-2xl font-black ${effColor}`;
 
-    // Render Timeline
     const tbody = document.getElementById('modalTimelineBody');
     tbody.innerHTML = '';
     if(log.events && log.events.length > 0) {
@@ -326,7 +336,6 @@ window.openDetails = function(logId) {
         tbody.innerHTML = '<tr><td colspan="4" class="text-center p-4 text-gray-400">No detailed timeline available for this record.</td></tr>';
     }
 
-    // Admin Note
     const adminDiv = document.getElementById('modalAdminNoteDiv');
     if(log.adminNote) {
         document.getElementById('modalAdminNote').innerText = log.adminNote;
@@ -335,7 +344,6 @@ window.openDetails = function(logId) {
         adminDiv.classList.add('hidden');
     }
 
-    // Viewer Comments
     const commentsDiv = document.getElementById('modalCommentsContainer');
     commentsDiv.innerHTML = '';
     if(log.viewerNotes && log.viewerNotes.length > 0) {
@@ -373,8 +381,6 @@ window.submitViewerNote = async function() {
             })
         });
         document.getElementById('viewerNoteText').value = '';
-        // UI will auto-update because of onSnapshot, but we need to re-render the modal content manually or close it.
-        // For simplicity, let's close it so they can reopen to see the new comment.
         document.getElementById('detailsModal').classList.add('hidden');
         alert("Comment added!");
     } catch (error) {
