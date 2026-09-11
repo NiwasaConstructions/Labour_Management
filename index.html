@@ -6,6 +6,8 @@
     <title>Niwasa Labor Monitor (CCTV Tracker)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js for Dashboard Graphs -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; }
         .tab-content { display: none; }
@@ -57,7 +59,6 @@
 
         <!-- Sidebar -->
         <aside id="sidebar" class="absolute md:relative w-64 h-full bg-teal-900 text-white flex flex-col shadow-lg z-50 transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out">
-            
             <div class="p-6 text-center border-b border-teal-800 relative">
                 <h1 class="text-xl font-bold text-teal-400 tracking-wider">LABOR MONITOR</h1>
                 <p class="text-xs text-gray-400 mt-1">CCTV Tracking System</p>
@@ -67,7 +68,11 @@
             </div>
 
             <nav class="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
-                <button onclick="switchTab('logs')" id="nav-logs" class="nav-item active w-full flex items-center p-3 rounded-lg hover:bg-teal-800 transition">
+                <button onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-item active w-full flex items-center p-3 rounded-lg hover:bg-teal-800 transition">
+                    <i class="fas fa-chart-pie w-6 text-center"></i> <span class="ml-2">Dashboard</span>
+                </button>
+
+                <button onclick="switchTab('logs')" id="nav-logs" class="nav-item w-full flex items-center p-3 rounded-lg hover:bg-teal-800 transition">
                     <i class="fas fa-list w-6 text-center"></i> <span class="ml-2">View Reports</span>
                 </button>
                 
@@ -97,26 +102,87 @@
                     <button onclick="toggleSidebar()" class="md:hidden mr-4 text-teal-700 hover:text-teal-900 focus:outline-none">
                         <i class="fas fa-bars text-2xl"></i>
                     </button>
-                    <h2 id="page-title" class="text-xl md:text-2xl font-bold text-gray-800 truncate">Labor Reports</h2>
+                    <h2 id="page-title" class="text-xl md:text-2xl font-bold text-gray-800 truncate">System Dashboard</h2>
                 </div>
             </header>
 
             <div class="p-4 sm:p-6 flex-1 w-full max-w-full">
+
+                <!-- 0. Dashboard Tab -->
+                <div id="dashboard" class="tab-content active">
+                    <!-- Summary Cards -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                        <div class="bg-white rounded-xl shadow-sm p-5 border-l-4 border-teal-500">
+                            <h3 class="text-gray-500 text-sm font-bold uppercase">Overall Average Efficiency</h3>
+                            <p class="text-3xl font-black text-gray-800 mt-1" id="dashAvgEff">0%</p>
+                        </div>
+                        <div class="bg-white rounded-xl shadow-sm p-5 border-l-4 border-purple-500">
+                            <h3 class="text-gray-500 text-sm font-bold uppercase">Total OT Hours (Recorded)</h3>
+                            <p class="text-3xl font-black text-gray-800 mt-1" id="dashTotalOT">0h</p>
+                        </div>
+                        <div class="bg-white rounded-xl shadow-sm p-5 border-l-4 border-blue-500">
+                            <h3 class="text-gray-500 text-sm font-bold uppercase">Total Labor Shifts Logged</h3>
+                            <p class="text-3xl font-black text-gray-800 mt-1" id="dashTotalLabor">0</p>
+                        </div>
+                    </div>
+
+                    <!-- Charts Area -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100">
+                            <h3 class="text-gray-700 font-bold mb-4 text-sm uppercase text-center">Efficiency By Site</h3>
+                            <div class="relative h-64 w-full">
+                                <canvas id="siteEffChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100">
+                            <h3 class="text-gray-700 font-bold mb-4 text-sm uppercase text-center">Recent Efficiency Trend</h3>
+                            <div class="relative h-64 w-full">
+                                <canvas id="trendChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 
                 <!-- 1. View Logs Tab -->
-                <div id="logs" class="tab-content active">
-                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3">
-                        <h3 class="text-lg font-bold text-gray-700">Daily Site Efficiency</h3>
-                        <select id="filterSite" onchange="renderLogs()" class="w-full sm:w-auto p-2 border rounded-lg focus:ring-2 focus:ring-teal-500">
-                            <option value="ALL">All Sites</option>
-                        </select>
+                <div id="logs" class="tab-content hidden">
+                    
+                    <!-- Advanced Filters & Export -->
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6 flex flex-col lg:flex-row gap-4 justify-between items-end lg:items-center">
+                        <div class="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
+                            <div class="flex-1">
+                                <label class="block text-xs font-bold text-gray-500 mb-1">Site</label>
+                                <select id="filterSite" onchange="renderLogs()" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-teal-500 text-sm">
+                                    <option value="ALL">All Sites</option>
+                                </select>
+                            </div>
+                            <div class="flex-1">
+                                <label class="block text-xs font-bold text-gray-500 mb-1">From Date</label>
+                                <input type="date" id="filterStartDate" onchange="renderLogs()" class="w-full p-2 border rounded-lg text-sm">
+                            </div>
+                            <div class="flex-1">
+                                <label class="block text-xs font-bold text-gray-500 mb-1">To Date</label>
+                                <input type="date" id="filterEndDate" onchange="renderLogs()" class="w-full p-2 border rounded-lg text-sm">
+                            </div>
+                        </div>
+                        
+                        <div class="flex gap-2 w-full lg:w-auto mt-2 lg:mt-0">
+                            <button onclick="clearFilters()" class="flex-1 lg:flex-none bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-lg hover:bg-gray-300 transition text-sm">
+                                Clear
+                            </button>
+                            <button onclick="downloadCSV()" class="flex-1 lg:flex-none bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 transition text-sm flex items-center justify-center shadow">
+                                <i class="fas fa-file-excel mr-2"></i> Export CSV
+                            </button>
+                        </div>
                     </div>
+
+                    <!-- Cards -->
                     <div id="logsContainer" class="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
                         <!-- Logs injected by JS -->
                     </div>
                 </div>
 
                 <!-- 2. Data Entry / Edit Tab (Admin Only) -->
+                <!-- [Previous addData content remains identical] -->
                 <div id="addData" class="tab-content hidden">
                     <div class="bg-white rounded-xl shadow-sm p-4 sm:p-6 border border-gray-100 max-w-5xl mx-auto">
                         <h3 id="formTitle" class="text-lg font-bold mb-4 border-b pb-2 text-gray-700"><i class="fas fa-clipboard-check text-teal-600 mr-2"></i>CCTV Labor Log Entry</h3>
@@ -185,6 +251,7 @@
     </div>
 
     <!-- FULL DETAILS MODAL -->
+    <!-- [Modal content identical to previous version...] -->
     <div id="detailsModal" class="fixed inset-0 bg-gray-900 bg-opacity-60 hidden flex items-center justify-center z-50 p-2 sm:p-4">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-full">
             <div class="bg-teal-700 p-3 sm:p-4 text-white flex justify-between items-center shrink-0">
@@ -269,14 +336,12 @@
             document.getElementById(tabId).classList.add('active');
             document.getElementById('nav-' + tabId).classList.add('active');
             
-            if(tabId === 'logs') {
-                document.getElementById('page-title').innerText = 'Labor Reports & Efficiency';
-            } else {
-                // Keep the editing title if we are editing
-                if(!window.isEditing) {
-                    document.getElementById('page-title').innerText = 'CCTV Data Entry';
-                }
-            }
+            const titles = {
+                'dashboard': 'System Dashboard',
+                'logs': 'Labor Reports & Efficiency',
+                'addData': window.isEditing ? 'Edit Record' : 'CCTV Data Entry'
+            };
+            document.getElementById('page-title').innerText = titles[tabId] || '';
             
             if(window.innerWidth < 768) { 
                 document.getElementById('sidebar').classList.add('-translate-x-full');
