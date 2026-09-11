@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
-import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, doc, updateDoc, arrayUnion } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, doc, updateDoc, deleteDoc, arrayUnion } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
 
 const firebaseConfig = {
@@ -18,6 +18,8 @@ const auth = getAuth(app);
 let allLogs = [];
 let currentUserEmail = "";
 let isAdmin = false;
+window.isEditing = false;
+let editingLogId = null;
 
 // ==========================================
 // AUTHENTICATION & ROLE MANAGEMENT
@@ -36,9 +38,8 @@ onAuthStateChanged(auth, (user) => {
             document.getElementById('userRoleDisplay').classList.replace('bg-teal-700', 'bg-red-600');
             document.getElementById('adminMenu').classList.remove('hidden');
             
-            // Add first initial time block
             if(document.getElementById('timeBlocksContainer').children.length === 0) {
-                addTimeBlock();
+                window.addTimeBlock();
             }
         } else {
             document.getElementById('userRoleDisplay').innerText = "VIEWER";
@@ -69,28 +70,32 @@ document.getElementById('logoutBtn').addEventListener('click', () => signOut(aut
 
 
 // ==========================================
-// DYNAMIC TIME BLOCKS LOGIC (SAFE EVENT LISTENERS)
+// DYNAMIC TIME BLOCKS LOGIC
 // ==========================================
 const timeBlocksContainer = document.getElementById('timeBlocksContainer');
 
-// Function to append a new block
-function addTimeBlock() {
+window.addTimeBlock = function(ev = null) {
+    const startVal = ev ? ev.start : '';
+    const endVal = ev ? ev.end : '';
+    const typeVal = ev ? ev.type : 'Work';
+    const workersVal = ev ? ev.workers : '';
+
     const html = `
         <div class="flex flex-col sm:flex-row gap-2 items-center bg-white p-3 rounded border border-gray-200 shadow-sm time-block-row">
             <div class="flex gap-2 w-full sm:w-auto">
-                <input type="time" class="time-start p-2 border rounded text-sm w-full" required>
+                <input type="time" class="time-start p-2 border rounded text-sm w-full" required value="${startVal}">
                 <span class="self-center text-gray-400">to</span>
-                <input type="time" class="time-end p-2 border rounded text-sm w-full" required>
+                <input type="time" class="time-end p-2 border rounded text-sm w-full" required value="${endVal}">
             </div>
             <select class="time-type p-2 border rounded text-sm w-full sm:w-auto" required>
-                <option value="Work">Normal Work</option>
-                <option value="Tea Break">Tea Break</option>
-                <option value="Lunch">Lunch Break</option>
-                <option value="Weather">Weather/Other Delay</option>
-                <option value="OT">Overtime (OT)</option>
+                <option value="Work" ${typeVal === 'Work' ? 'selected' : ''}>Normal Work</option>
+                <option value="Tea Break" ${typeVal === 'Tea Break' ? 'selected' : ''}>Tea Break</option>
+                <option value="Lunch" ${typeVal === 'Lunch' ? 'selected' : ''}>Lunch Break</option>
+                <option value="Weather" ${typeVal === 'Weather' ? 'selected' : ''}>Weather/Other Delay</option>
+                <option value="OT" ${typeVal === 'OT' ? 'selected' : ''}>Overtime (OT)</option>
             </select>
-            <input type="number" class="time-workers p-2 border rounded text-sm w-full sm:w-24" placeholder="Workers" required min="1">
-            <button type="button" class="delete-block-btn p-2 text-red-500 hover:bg-red-50 rounded">
+            <input type="number" class="time-workers p-2 border rounded text-sm w-full sm:w-24" placeholder="Workers" required min="1" value="${workersVal}">
+            <button type="button" class="delete-block-btn p-2 text-red-500 hover:bg-red-50 rounded transition">
                 <i class="fas fa-trash pointer-events-none"></i>
             </button>
         </div>
@@ -98,19 +103,16 @@ function addTimeBlock() {
     timeBlocksContainer.insertAdjacentHTML('beforeend', html);
 }
 
-// 1. Add Block Button Listener
-document.getElementById('btnAddTimeBlock').addEventListener('click', addTimeBlock);
+document.getElementById('btnAddTimeBlock').addEventListener('click', () => window.addTimeBlock());
 
-// 2. Delete Block Listener (Event Delegation)
 timeBlocksContainer.addEventListener('click', (e) => {
     const deleteBtn = e.target.closest('.delete-block-btn');
     if (deleteBtn) {
         deleteBtn.closest('.time-block-row').remove();
-        calculateTotals(); // Recalculate after delete
+        calculateTotals(); 
     }
 });
 
-// 3. Calculation Listeners (Fires when inputs change)
 timeBlocksContainer.addEventListener('input', calculateTotals);
 timeBlocksContainer.addEventListener('change', calculateTotals);
 
@@ -147,7 +149,7 @@ function calculateTotals() {
 
 
 // ==========================================
-// ADMIN: SAVE FULL RECORD
+// ADMIN: SAVE / UPDATE FULL RECORD
 // ==========================================
 document.getElementById('laborForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -156,7 +158,7 @@ document.getElementById('laborForm').addEventListener('submit', async (e) => {
     if(rows.length === 0) return alert("Please add at least one Time Block.");
 
     const btn = document.getElementById('saveRecordBtn');
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving Record...';
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
     btn.disabled = true;
 
     let events = [];
@@ -186,29 +188,100 @@ document.getElementById('laborForm').addEventListener('submit', async (e) => {
         otHours: parseFloat(totals.otH.toFixed(2)),
         efficiency: efficiency,
         events: events, 
-        adminNote: document.getElementById('adminNote').value,
-        viewerNotes: [], 
-        createdAt: serverTimestamp()
+        adminNote: document.getElementById('adminNote').value
     };
 
     try {
-        await addDoc(collection(db, "laborLogs"), data);
-        document.getElementById('laborForm').reset();
-        document.getElementById('recordDate').valueAsDate = new Date();
-        document.getElementById('timeBlocksContainer').innerHTML = '';
-        addTimeBlock(); 
-        calculateTotals();
-        alert("Record Saved Successfully!");
-        // Switch to view tab visually
+        if(window.isEditing && editingLogId) {
+            await updateDoc(doc(db, "laborLogs", editingLogId), data);
+            alert("Record Updated Successfully!");
+            window.cancelEdit(); 
+        } else {
+            data.viewerNotes = [];
+            data.createdAt = serverTimestamp();
+            await addDoc(collection(db, "laborLogs"), data);
+            
+            document.getElementById('laborForm').reset();
+            document.getElementById('recordDate').valueAsDate = new Date();
+            document.getElementById('timeBlocksContainer').innerHTML = '';
+            window.addTimeBlock(); 
+            calculateTotals();
+            alert("Record Saved Successfully!");
+        }
+        
         document.getElementById('nav-logs').click();
     } catch (error) {
         alert("Error saving record.");
         console.error(error);
     } finally {
-        btn.innerHTML = 'Save Full Day Record';
+        btn.innerHTML = window.isEditing ? 'Update Record' : 'Save Full Day Record';
         btn.disabled = false;
     }
 });
+
+window.cancelEdit = function() {
+    window.isEditing = false;
+    editingLogId = null;
+    
+    document.getElementById('formTitle').innerHTML = '<i class="fas fa-clipboard-check text-teal-600 mr-2"></i>CCTV Labor Log Entry';
+    document.getElementById('saveRecordBtn').innerHTML = 'Save Full Day Record';
+    document.getElementById('cancelEditBtn').classList.add('hidden');
+    document.getElementById('page-title').innerText = 'CCTV Data Entry';
+    
+    document.getElementById('laborForm').reset();
+    document.getElementById('recordDate').valueAsDate = new Date();
+    document.getElementById('timeBlocksContainer').innerHTML = '';
+    window.addTimeBlock();
+    calculateTotals();
+};
+
+
+// ==========================================
+// ADMIN: EDIT & DELETE LOGIC (Fixing Event Bubbling)
+// ==========================================
+window.editLog = function(event, logId) {
+    event.stopPropagation(); // Stop the card click from firing
+    
+    const log = allLogs.find(l => l.id === logId);
+    if(!log) return;
+
+    window.isEditing = true;
+    editingLogId = log.id;
+
+    document.getElementById('formTitle').innerHTML = '<i class="fas fa-edit text-teal-600 mr-2"></i>Edit Labor Record';
+    document.getElementById('saveRecordBtn').innerHTML = 'Update Record';
+    document.getElementById('cancelEditBtn').classList.remove('hidden');
+    document.getElementById('page-title').innerText = 'Edit Record';
+
+    document.getElementById('recordSite').value = log.siteName;
+    document.getElementById('recordDate').value = log.date;
+    document.getElementById('skilledCount').value = log.skilled;
+    document.getElementById('unskilledCount').value = log.unskilled;
+    document.getElementById('adminNote').value = log.adminNote || '';
+
+    timeBlocksContainer.innerHTML = '';
+    if(log.events && log.events.length > 0) {
+        log.events.forEach(ev => { window.addTimeBlock(ev); });
+    } else {
+        window.addTimeBlock();
+    }
+
+    calculateTotals();
+    document.getElementById('nav-addData').click();
+};
+
+window.deleteLog = async function(event, logId) {
+    event.stopPropagation(); // Stop the card click from firing
+    
+    if(confirm("Are you sure you want to permanently delete this record?")) {
+        try {
+            await deleteDoc(doc(db, "laborLogs", logId));
+            alert("Record Deleted Successfully.");
+        } catch (error) {
+            alert("Error deleting record.");
+        }
+    }
+};
 
 
 // ==========================================
@@ -231,12 +304,12 @@ onSnapshot(query(collection(db, "laborLogs"), orderBy("date", "desc")), (snapsho
     uniqueSites.forEach(site => { filterSite.innerHTML += `<option value="${site}">${site}</option>`; });
     filterSite.value = currentFilter;
 
-    renderLogs();
+    window.renderLogs();
 });
 
-filterSite.addEventListener('change', renderLogs);
+filterSite.addEventListener('change', window.renderLogs);
 
-function renderLogs() {
+window.renderLogs = function() {
     const filter = filterSite.value;
     const container = document.getElementById('logsContainer');
     container.innerHTML = '';
@@ -253,8 +326,19 @@ function renderLogs() {
         if(log.efficiency < 75) effColor = 'bg-yellow-500';
         if(log.efficiency < 50) effColor = 'bg-red-500';
 
+        // PASSING 'event' TO THE FUNCTIONS TO PREVENT BUBBLING
+        let adminActionsHTML = '';
+        if (isAdmin) {
+            adminActionsHTML = `
+                <div class="bg-gray-100 p-2 flex justify-end gap-3 border-t items-center rounded-b-xl z-20 relative">
+                    <button onclick="window.editLog(event, '${log.id}')" class="text-blue-600 hover:text-blue-800 text-sm font-semibold px-2 py-1 transition"><i class="fas fa-edit mr-1"></i>Edit</button>
+                    <button onclick="window.deleteLog(event, '${log.id}')" class="text-red-500 hover:text-red-700 text-sm font-semibold px-2 py-1 transition"><i class="fas fa-trash-alt mr-1"></i>Delete</button>
+                </div>
+            `;
+        }
+
         container.innerHTML += `
-            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden cursor-pointer hover:shadow-md transition" onclick="window.openDetails('${log.id}')">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden cursor-pointer hover:shadow-md transition flex flex-col relative" onclick="window.openDetails('${log.id}')">
                 <div class="bg-gray-50 p-4 border-b flex justify-between items-center">
                     <div>
                         <h4 class="font-bold text-gray-800 text-lg">${log.siteName}</h4>
@@ -266,7 +350,7 @@ function renderLogs() {
                     </div>
                 </div>
                 
-                <div class="p-4">
+                <div class="p-4 flex-1">
                     <div class="flex justify-between text-sm mb-3">
                         <div class="text-center w-1/3 border-r">
                             <p class="font-bold text-gray-800">${log.skilled + log.unskilled}</p>
@@ -285,10 +369,12 @@ function renderLogs() {
                         <p class="text-sm text-blue-600 font-semibold">Click to view full timeline & details <i class="fas fa-arrow-right ml-1"></i></p>
                     </div>
                 </div>
+                
+                ${adminActionsHTML}
             </div>
         `;
     });
-}
+};
 
 
 // ==========================================
@@ -296,7 +382,6 @@ function renderLogs() {
 // ==========================================
 let activeLogIdForNote = null;
 
-// Attach globally for the inline onclick in the HTML string generated above
 window.openDetails = function(logId) {
     const log = allLogs.find(l => l.id === logId);
     if(!log) return;
@@ -312,7 +397,7 @@ window.openDetails = function(logId) {
     if(log.efficiency < 75) effColor = 'text-yellow-600';
     if(log.efficiency < 50) effColor = 'text-red-600';
     document.getElementById('modalEff').innerText = log.efficiency + '%';
-    document.getElementById('modalEff').className = `text-2xl font-black ${effColor}`;
+    document.getElementById('modalEff').className = `text-xl sm:text-2xl font-black ${effColor}`;
 
     const tbody = document.getElementById('modalTimelineBody');
     tbody.innerHTML = '';
@@ -328,7 +413,7 @@ window.openDetails = function(logId) {
                     <td class="p-2 font-medium">${ev.start} - ${ev.end}</td>
                     <td class="p-2 text-gray-500">${ev.duration}h</td>
                     <td class="p-2 ${actColor}">${ev.type}</td>
-                    <td class="p-2 text-center font-semibold">${ev.workers} Pax</td>
+                    <td class="p-2 text-center font-semibold">${ev.workers}</td>
                 </tr>
             `;
         });
@@ -360,7 +445,7 @@ window.openDetails = function(logId) {
             `;
         });
     } else {
-        commentsDiv.innerHTML = '<p class="text-gray-400 italic">No comments yet.</p>';
+        commentsDiv.innerHTML = '<p class="text-gray-400 italic text-center py-2">No comments yet.</p>';
     }
 
     document.getElementById('viewerNoteText').value = '';
