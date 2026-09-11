@@ -16,10 +16,15 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 
 let allLogs = [];
+let filteredLogsGlobal = []; // Used for CSV Export
 let currentUserEmail = "";
 let isAdmin = false;
 window.isEditing = false;
 let editingLogId = null;
+
+// Chart Instances
+let siteEffChartInst = null;
+let trendChartInst = null;
 
 // ==========================================
 // AUTHENTICATION & ROLE MANAGEMENT
@@ -226,22 +231,21 @@ window.cancelEdit = function() {
     document.getElementById('formTitle').innerHTML = '<i class="fas fa-clipboard-check text-teal-600 mr-2"></i>CCTV Labor Log Entry';
     document.getElementById('saveRecordBtn').innerHTML = 'Save Full Day Record';
     document.getElementById('cancelEditBtn').classList.add('hidden');
-    document.getElementById('page-title').innerText = 'CCTV Data Entry';
     
     document.getElementById('laborForm').reset();
     document.getElementById('recordDate').valueAsDate = new Date();
     document.getElementById('timeBlocksContainer').innerHTML = '';
     window.addTimeBlock();
     calculateTotals();
+    document.getElementById('page-title').innerText = 'CCTV Data Entry';
 };
 
 
 // ==========================================
-// ADMIN: EDIT & DELETE LOGIC (Fixing Event Bubbling)
+// ADMIN: EDIT & DELETE LOGIC
 // ==========================================
 window.editLog = function(event, logId) {
-    event.stopPropagation(); // Stop the card click from firing
-    
+    event.stopPropagation(); 
     const log = allLogs.find(l => l.id === logId);
     if(!log) return;
 
@@ -251,7 +255,6 @@ window.editLog = function(event, logId) {
     document.getElementById('formTitle').innerHTML = '<i class="fas fa-edit text-teal-600 mr-2"></i>Edit Labor Record';
     document.getElementById('saveRecordBtn').innerHTML = 'Update Record';
     document.getElementById('cancelEditBtn').classList.remove('hidden');
-    document.getElementById('page-title').innerText = 'Edit Record';
 
     document.getElementById('recordSite').value = log.siteName;
     document.getElementById('recordDate').value = log.date;
@@ -271,8 +274,7 @@ window.editLog = function(event, logId) {
 };
 
 window.deleteLog = async function(event, logId) {
-    event.stopPropagation(); // Stop the card click from firing
-    
+    event.stopPropagation(); 
     if(confirm("Are you sure you want to permanently delete this record?")) {
         try {
             await deleteDoc(doc(db, "laborLogs", logId));
@@ -288,6 +290,15 @@ window.deleteLog = async function(event, logId) {
 // VIEW: RENDER REPORTS & FILTER
 // ==========================================
 const filterSite = document.getElementById('filterSite');
+const filterStartDate = document.getElementById('filterStartDate');
+const filterEndDate = document.getElementById('filterEndDate');
+
+window.clearFilters = function() {
+    filterSite.value = 'ALL';
+    filterStartDate.value = '';
+    filterEndDate.value = '';
+    window.renderLogs();
+};
 
 onSnapshot(query(collection(db, "laborLogs"), orderBy("date", "desc")), (snapshot) => {
     allLogs = [];
@@ -304,29 +315,36 @@ onSnapshot(query(collection(db, "laborLogs"), orderBy("date", "desc")), (snapsho
     uniqueSites.forEach(site => { filterSite.innerHTML += `<option value="${site}">${site}</option>`; });
     filterSite.value = currentFilter;
 
+    updateDashboard(); // Refresh Dashboard Graphs
     window.renderLogs();
 });
 
-filterSite.addEventListener('change', window.renderLogs);
-
 window.renderLogs = function() {
-    const filter = filterSite.value;
+    const site = filterSite.value;
+    const sDate = filterStartDate.value;
+    const eDate = filterEndDate.value;
     const container = document.getElementById('logsContainer');
     container.innerHTML = '';
 
-    const filteredLogs = filter === 'ALL' ? allLogs : allLogs.filter(l => l.siteName === filter);
+    // Multiple Filters logic
+    filteredLogsGlobal = allLogs.filter(l => {
+        let match = true;
+        if (site !== 'ALL' && l.siteName !== site) match = false;
+        if (sDate && l.date < sDate) match = false;
+        if (eDate && l.date > eDate) match = false;
+        return match;
+    });
 
-    if (filteredLogs.length === 0) {
-        container.innerHTML = `<div class="col-span-full text-center text-gray-400 py-10">No records found.</div>`;
+    if (filteredLogsGlobal.length === 0) {
+        container.innerHTML = `<div class="col-span-full text-center text-gray-400 py-10">No records found for selected filters.</div>`;
         return;
     }
 
-    filteredLogs.forEach(log => {
+    filteredLogsGlobal.forEach(log => {
         let effColor = 'bg-teal-500';
         if(log.efficiency < 75) effColor = 'bg-yellow-500';
         if(log.efficiency < 50) effColor = 'bg-red-500';
 
-        // PASSING 'event' TO THE FUNCTIONS TO PREVENT BUBBLING
         let adminActionsHTML = '';
         if (isAdmin) {
             adminActionsHTML = `
@@ -365,16 +383,119 @@ window.renderLogs = function() {
                             <p class="text-xs text-gray-500">OT</p>
                         </div>
                     </div>
-                    <div class="text-center mt-3 pt-3 border-t">
-                        <p class="text-sm text-blue-600 font-semibold">Click to view full timeline & details <i class="fas fa-arrow-right ml-1"></i></p>
-                    </div>
                 </div>
-                
                 ${adminActionsHTML}
             </div>
         `;
     });
 };
+
+
+// ==========================================
+// EXPORT TO CSV
+// ==========================================
+window.downloadCSV = function() {
+    if(filteredLogsGlobal.length === 0) return alert("No data to export!");
+
+    let csv = "Date,Site Name,Skilled Labor,Unskilled Labor,Total Labor,Work (Hours),Breaks (Hours),OT (Hours),Efficiency (%),Admin Notes\n";
+    
+    filteredLogsGlobal.forEach(log => {
+        let safeNote = log.adminNote ? `"${log.adminNote.replace(/"/g, '""')}"` : ""; // Handle commas and quotes in notes
+        let totalL = log.skilled + log.unskilled;
+        csv += `${log.date},${log.siteName},${log.skilled},${log.unskilled},${totalL},${log.workHours},${log.breakHours},${log.otHours},${log.efficiency}%,${safeNote}\n`;
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.setAttribute('href', url);
+    a.setAttribute('download', `Labor_Report_${new Date().toISOString().split('T')[0]}.csv`);
+    a.click();
+};
+
+
+// ==========================================
+// DASHBOARD & CHARTS
+// ==========================================
+function updateDashboard() {
+    if(allLogs.length === 0) return;
+
+    let totalOT = 0;
+    let totalEff = 0;
+    let siteStats = {};
+    let dateStats = {};
+
+    allLogs.forEach(l => {
+        totalOT += l.otHours || 0;
+        totalEff += l.efficiency;
+
+        // Group by Site
+        if(!siteStats[l.siteName]) siteStats[l.siteName] = { count: 0, sumEff: 0 };
+        siteStats[l.siteName].count++;
+        siteStats[l.siteName].sumEff += l.efficiency;
+
+        // Group by Date for Trend
+        if(!dateStats[l.date]) dateStats[l.date] = { count: 0, sumEff: 0 };
+        dateStats[l.date].count++;
+        dateStats[l.date].sumEff += l.efficiency;
+    });
+
+    // Top Summary
+    document.getElementById('dashTotalLabor').innerText = allLogs.length;
+    document.getElementById('dashTotalOT').innerText = totalOT.toFixed(1) + 'h';
+    document.getElementById('dashAvgEff').innerText = Math.round(totalEff / allLogs.length) + '%';
+
+    // Prepare Data for Site Bar Chart
+    const siteLabels = Object.keys(siteStats);
+    const siteData = siteLabels.map(s => Math.round(siteStats[s].sumEff / siteStats[s].count));
+
+    // Prepare Data for Trend Line Chart (Sort by Date ascending)
+    const sortedDates = Object.keys(dateStats).sort();
+    // Get last 7 days for readability
+    const recentDates = sortedDates.slice(-7);
+    const trendData = recentDates.map(d => Math.round(dateStats[d].sumEff / dateStats[d].count));
+
+    // Render Site Chart
+    const ctxSite = document.getElementById('siteEffChart').getContext('2d');
+    if(siteEffChartInst) siteEffChartInst.destroy();
+    siteEffChartInst = new Chart(ctxSite, {
+        type: 'bar',
+        data: {
+            labels: siteLabels,
+            datasets: [{
+                label: 'Average Efficiency (%)',
+                data: siteData,
+                backgroundColor: 'rgba(15, 118, 110, 0.7)', // Teal
+                borderRadius: 4
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: { y: { beginAtZero: true, max: 100 } }
+        }
+    });
+
+    // Render Trend Chart
+    const ctxTrend = document.getElementById('trendChart').getContext('2d');
+    if(trendChartInst) trendChartInst.destroy();
+    trendChartInst = new Chart(ctxTrend, {
+        type: 'line',
+        data: {
+            labels: recentDates,
+            datasets: [{
+                label: 'Overall Efficiency Trend (%)',
+                data: trendData,
+                borderColor: '#8b5cf6', // Purple
+                backgroundColor: 'rgba(139, 92, 246, 0.2)',
+                fill: true, tension: 0.3
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: { y: { beginAtZero: true, max: 100 } }
+        }
+    });
+}
 
 
 // ==========================================
@@ -418,7 +539,7 @@ window.openDetails = function(logId) {
             `;
         });
     } else {
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center p-4 text-gray-400">No detailed timeline available for this record.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center p-4 text-gray-400">No timeline available.</td></tr>';
     }
 
     const adminDiv = document.getElementById('modalAdminNoteDiv');
